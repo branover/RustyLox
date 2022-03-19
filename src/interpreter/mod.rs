@@ -1,10 +1,14 @@
 pub mod scanner;
 pub mod token;
 pub mod literal;
+pub mod expr;
+pub mod parser;
 
 pub use token::Token as Token;
 pub use scanner::Scanner as Scanner;
 pub use literal::Literal as Literal;
+pub use expr::Expr as Expr;
+pub use parser::Parser as Parser;
 
 #[derive(Debug,Clone)]
 pub struct Error {

@@ -31,9 +31,8 @@ struct CharPtr {
 
 impl CharPtr {
     pub fn from(string: &str) -> CharPtr {
-        let ptr = string.as_ptr();        
         CharPtr {
-            ptr
+            ptr: string.as_ptr()
         }
     }
 
@@ -47,14 +46,7 @@ impl CharPtr {
     }
 
     #[inline(always)]
-    pub fn add(&mut self, i: usize) {
-        unsafe {
-            self.ptr = self.ptr.add(i);
-        };
-    }
-
-    #[inline(always)]
-    pub fn offset(&self, i: isize) -> char{
+    pub fn offset(&self, i: isize) -> char {
         unsafe {
             *self.ptr.offset(i) as char
         }
@@ -88,7 +80,6 @@ impl Scanner {
                 ("true", TokenType::True),
                 ("var", TokenType::Var),
                 ("while", TokenType::While),
-                ("lambda", TokenType::Lambda),
             ]
             .into_iter()
             .map(|(k, v)| (String::from(k), v))
@@ -96,10 +87,7 @@ impl Scanner {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&Vec<Token>,Error> {
-        // let mut char_ptr = CharPtr::new(&self.source);
-        // println!("{}", self.source);
-
+    pub fn scan_tokens(&mut self) -> Result<Vec<Token>,Error> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
@@ -108,13 +96,12 @@ impl Scanner {
         self.tokens.push(Token::new(TokenType::Eof, "", None, self.line));
         match &self.error {
             Some(e) => Err(e.clone()),
-            None => Ok(&self.tokens)
+            None => Ok(std::mem::take(&mut self.tokens))
         }
     }
 
     fn scan_token(&mut self) {
         let c = self.advance();
-        // println!("c: {}, current: {}",c, self.current);
         match c {
             '(' => self.add_char_token(TokenType::LeftParen),
             ')' => self.add_char_token(TokenType::RightParen),
@@ -159,7 +146,7 @@ impl Scanner {
         }
         else {
             self.current += 1;
-            self.char_ptr.add(1);
+            self.char_ptr.advance();
             true
         }
     }

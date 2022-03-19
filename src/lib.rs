@@ -51,15 +51,29 @@ impl Lox {
     }
     
     fn run(&mut self, source: &str) {
+        // Scanning
         let mut scanner = Scanner::new(source);
         let result = scanner.scan_tokens();
-        if let Ok(tokens) = result {
+        if let Ok(ref tokens) = result {
             tokens.iter().for_each(|token| {
                 println!("{}", token);
             });
         } 
-        else if let Err(e) = result {
+        else if let Err(ref e) = result {
             self.had_error = true;
-        }  
+        }
+        
+        // Parsing 
+        let tokens = result.unwrap();
+        let mut parser = Parser::new(tokens);
+        let expr = parser.parse();
+        match expr {
+            Ok(expr) => {
+                println!("{}", expr);
+            },
+            Err(e) => {
+                self.had_error = true;
+            }
+        };
     }
 }
