@@ -13,6 +13,8 @@ use std::{
 
 pub struct Lox {
     had_error: bool,
+    had_runtime_error: bool,
+    interpreter: Interpreter,
 }    
 
 impl ErrorReport for Lox {}
@@ -20,11 +22,11 @@ impl ErrorReport for Lox {}
 impl Lox {
     pub fn new() -> Lox {
         Lox{
-            had_error: false
+            had_error: false,
+            had_runtime_error: false,
+            interpreter: Interpreter::new(),
         }
     }
-
-
 
     pub fn run_file(&mut self, path: &str) -> std::io::Result<()> {
         let contents = read_to_string(path)?;
@@ -33,13 +35,16 @@ impl Lox {
         if self.had_error {
             std::process::exit(65);
         }
+        if self.had_runtime_error {
+            std::process::exit(70);
+        }
         Ok(())
     }
     
     pub fn run_prompt(&mut self) -> std::io::Result<()> { 
-        let mut buffer = String::new();
         let stdin = io::stdin();
         loop {
+            let mut buffer = String::new();
             let read_len = stdin.read_line(&mut buffer)?;
             if read_len == 0 {
                 break;
@@ -56,11 +61,12 @@ impl Lox {
         let result = scanner.scan_tokens();
         if let Ok(ref tokens) = result {
             tokens.iter().for_each(|token| {
-                println!("{}", token);
+                // println!("{}", token);
             });
         } 
         else if let Err(ref e) = result {
             self.had_error = true;
+            return;
         }
         
         // Parsing 
@@ -68,11 +74,10 @@ impl Lox {
         let mut parser = Parser::new(tokens);
         let expr = parser.parse();
         match expr {
-            Ok(expr) => {
-                println!("{}", expr);
-            },
+            Ok(expr) => self.interpreter.interpret(expr),
             Err(e) => {
-                self.had_error = true;
+                println!("{}", e);
+                self.had_runtime_error = true;
             }
         };
     }

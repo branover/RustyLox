@@ -1,42 +1,75 @@
 use super::token::{Token,TokenType};
-use super::Literal;
-use super::{Error, ErrorReport};
-use super::{Expr};
+use super::Expr;
 
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
-    error: Option<Error>
 }
 
-impl ErrorReport for Parser {}
+type ParseResult<T> = Result<T, ParsingError>;
+
+#[derive(Debug)]
+pub enum ParsingError {
+    UnexpectedTokenError(Token, String),
+    UnexpectedEofError,  
+    InvalidAssignmentError(Token),
+    TooManyArgumentsError,
+    TooManyParametersError,
+    InternalError(String)  
+}
+
+impl std::fmt::Display for ParsingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            ParsingError::UnexpectedTokenError(ref token, ref message) => {
+                write!(f,
+                       "[line {}] UnexpectedTokenError: {} {}",
+                       token.line,
+                       message,
+                       token.lexeme)
+            }
+            ParsingError::UnexpectedEofError => f.write_str("Unexpected end of input"),
+            ParsingError::InvalidAssignmentError(ref token) => {
+                write!(f, "[line {}] Invalid assignment target", token.line)
+            }
+            ParsingError::InternalError(ref message) => write!(f, "Internal error: {}", message),
+            ParsingError::TooManyArgumentsError => f.write_str("Too many arguments, max number is 8"),
+            ParsingError::TooManyParametersError => f.write_str("Too many parameters, max number is 8")
+        }
+    }
+}
+
+impl std::error::Error for ParsingError {
+    fn description(&self) -> &str {
+        match *self {
+            ParsingError::UnexpectedTokenError(_, _) => "UnexpectedTokenError",
+            ParsingError::UnexpectedEofError => "UnexpectedEofError",
+            ParsingError::InvalidAssignmentError(_) => "InvalidAssignmentError",
+            ParsingError::InternalError(_) => "InternalError",
+            ParsingError::TooManyArgumentsError => "TooManyArgumentsError",
+            ParsingError::TooManyParametersError => "TooManyParametersError"
+        }
+    }
+}
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
         Parser {
             tokens,
             current: 0,
-            error: None
         }
     }
 
-    pub fn parse(&mut self) -> Result<Expr, Error> {
-        let expr = self.expression();
-
-        match self.error {
-            None => {
-                Ok(expr)
-            },
-            Some(ref e) => Err(e.clone())
-        }
+    pub fn parse(&mut self) -> ParseResult<Expr> {
+        self.expression()
     }
 
-    fn expression(&mut self) -> Expr {
+    fn expression(&mut self) -> ParseResult<Expr> {
         self.equality()
     }
 
-    fn equality(&mut self) -> Expr {
-        let mut expr = self.comparison();
+    fn equality(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.comparison()?;
 
         let matches = vec![
             TokenType::BangEqual,
@@ -45,15 +78,15 @@ impl Parser {
 
         while self.match_token(&matches) {
             let operator = self.previous().clone();
-            let right = self.comparison();
+            let right = self.comparison()?;
             expr = Expr::Binary(Box::new(expr), operator, Box::new(right));
         }
 
-        expr
+        Ok(expr)
     }
 
-    fn comparison(&mut self) -> Expr {
-        let mut expr = self.term();
+    fn comparison(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.term()?;
 
         let matches = vec![
             TokenType::Greater,
@@ -64,15 +97,15 @@ impl Parser {
 
         while self.match_token(&matches) {
             let operator = self.previous().clone();
-            let right = self.term();
+            let right = self.term()?;
             expr = Expr::Binary(Box::new(expr), operator, Box::new(right))
         }
 
-        expr
+        Ok(expr)
     }
 
-    fn term(&mut self) -> Expr {
-        let mut expr = self.factor();
+    fn term(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.factor()?;
 
         let matches = vec![
             TokenType::Minus,
@@ -81,15 +114,15 @@ impl Parser {
 
         while self.match_token(&matches) {
             let operator = self.previous().clone();
-            let right = self.factor();
+            let right = self.factor()?;
             expr = Expr::Binary(Box::new(expr), operator, Box::new(right))
         }
 
-        expr        
+        Ok(expr)        
     }
 
-    fn factor(&mut self) -> Expr {
-        let mut expr = self.unary();
+    fn factor(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.unary()?;
 
         let matches = vec![
             TokenType::Slash,
@@ -98,45 +131,55 @@ impl Parser {
 
         while self.match_token(&matches) {
             let operator = self.previous().clone();
-            let right = self.unary();
+            let right = self.unary()?;
             expr = Expr::Binary(Box::new(expr), operator, Box::new(right))
         }
 
-        expr        
+        Ok(expr)        
     }    
 
-    fn unary(&mut self) -> Expr {
+    fn unary(&mut self) -> ParseResult<Expr> {
         let matches = vec![
             TokenType::Bang,
             TokenType::Minus
         ];
 
-        if self.match_token(&matches) {
+        let expr = if self.match_token(&matches) {
             let operator = self.previous().clone();
-            let right = self.unary();
-            let expr = Expr::Unary(operator, Box::new(right));
-            expr           
+            let right = self.unary()?;
+            Expr::Unary(operator, Box::new(right))          
         } else {
-            self.primary()
-        }
+            self.primary()?
+        };
+        Ok(expr)
     }
 
-    fn primary(&mut self) -> Expr {
-        if self.match_token(&[TokenType::False]) {
-            Expr::Literal(Literal::Bool(false))
-        } else if self.match_token(&[TokenType::True]) {
-            Expr::Literal(Literal::Bool(true))
-        } else if self.match_token(&[TokenType::Nil]) {
-            Expr::Literal(Literal::Nil)
-        } else if self.match_token(&[TokenType::Number, TokenType::String]) {
-            Expr::Literal(self.previous().literal.as_ref().unwrap().clone())
-        } else if self.match_token(&[TokenType::LeftParen]) {
-            let expr = self.expression();
-            self.consume(TokenType::RightParen, "Expect ')' after expression");
-            Expr::Grouping(Box::from(expr))
+    fn primary(&mut self) -> ParseResult<Expr> {
+        if self.match_token(&[
+            TokenType::Number,
+            TokenType::String,
+            TokenType::False,
+            TokenType::True,
+            TokenType::Nil,        
+        ]) {
+            return match self.previous().literal {
+                Some(ref literal) => Ok(Expr::Literal(literal.clone())),
+                None => Err(ParsingError::InternalError(
+                    "Undefined Literal".to_string()
+                ))
+            }
+        }
+
+        if self.match_token(&[TokenType::LeftParen]) {
+            let expr = self.expression()?;
+            self.consume(TokenType::RightParen, "Expect ')' after expression")?;
+            return Ok(Expr::Grouping(Box::from(expr)))
+        } 
+
+        if self.is_at_end() {
+            Err(ParsingError::UnexpectedEofError)
         } else {
-            println!("Trying to parse Token: {}", self.peek());
-            self.parse_error(&self.peek().clone(), "Expected expression");
+            Err(ParsingError::UnexpectedTokenError(self.peek().clone(), "Unexpected Token".to_string()))
         }
     }
 
@@ -178,29 +221,16 @@ impl Parser {
         &self.tokens[self.current-1]
     }
 
-    fn consume(&mut self, token_type: TokenType, msg: &str) -> &Token {
+    fn consume(&mut self, token_type: TokenType, msg: &str) -> ParseResult<&Token> {
         if self.check(token_type) {
-            self.advance()
+            Ok(self.advance())
         } else {
             let peek = self.peek().clone();
-            self.parse_error(&peek, msg)
+            Err(ParsingError::UnexpectedTokenError(
+                self.peek().clone(),
+                msg.to_string(),
+            ))
         }
-    }
-
-    fn parse_error(&mut self, token: &Token, msg: &str) -> ! {
-        self.error = Some(Error {
-            line: token.line,
-            message: msg.to_string(),
-        });
-        match token.token_type {
-            TokenType::Eof => {
-                self.report(token.line, " at end", msg)
-            }
-            _ => {
-                self.report(token.line, &format!(" at '{}'",token.lexeme), msg);
-            }
-        }
-        panic!("Parsing error! Reason: {}", msg);
     }
 
     fn synchronize(&mut self) {
