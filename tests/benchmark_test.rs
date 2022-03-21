@@ -10,6 +10,7 @@ mod tests {
     use std::fs;
 
     #[bench]
+    #[ignore]
     fn bench_directory(b: &mut Bencher) {
         b.iter(|| {
             let paths = fs::read_dir("./example/benchmark").unwrap();
@@ -22,5 +23,13 @@ mod tests {
             });
             
         })
+    }
+
+    #[bench]
+    fn scope_directory(b: &mut Bencher) {
+        let mut lox = Lox::new();
+        b.iter(|| {
+            lox.run_file("./example/block/scope2.lox").unwrap();
+        });        
     }
 }

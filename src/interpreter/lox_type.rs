@@ -163,7 +163,7 @@ impl LoxType {
                 TokenType::EqualEqual if ordering == Ordering::Equal => true,
                 _ => false
             };
-            return Ok(LoxType::Bool(result))
+            Ok(LoxType::Bool(result))
         } else {
             Err(LoxTypeError::IllegalComparisonError(self.clone(), right.clone()))
         }

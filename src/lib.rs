@@ -17,6 +17,12 @@ pub struct Lox {
     interpreter: Interpreter,
 }    
 
+impl Default for Lox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ErrorReport for Lox {}
 
 impl Lox {

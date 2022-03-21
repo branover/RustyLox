@@ -17,6 +17,9 @@ pub use lox_type::LoxTypeError as LoxTypeError;
 pub use stmt::Stmt as Stmt;
 pub use environment::Environment as Environment;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use token::TokenType;
 
 #[derive(Debug,Clone)]
@@ -40,6 +43,7 @@ type EvaluationResult<T> = Result<T, EvaluationError>;
 #[derive(Debug)]
 pub enum EvaluationError {
     IllegalExpressionType(Expr),
+    IllegalStatementType(Stmt),
     IllegalOperationError(Token),
     LoxTypeError(Token,LoxTypeError),
     UndefinedIdentifierError(Token),
@@ -51,6 +55,9 @@ impl std::fmt::Display for EvaluationError {
         match *self {
             EvaluationError::IllegalExpressionType(ref expr) => {
                 write!(f,"[line ?] IllegalExpressionType: {}", expr)
+            },
+            EvaluationError::IllegalStatementType(ref stmt) => {
+                write!(f,"[line ?] IllegalStatementType: {}", stmt)
             },
             EvaluationError::IllegalOperationError(ref token) => {
                 write!(f,"[line {}] IllegalOperationError: {}", token.line, token.lexeme)
@@ -70,6 +77,7 @@ impl std::error::Error for EvaluationError {
     fn description(&self) -> &str {
         match *self {
             EvaluationError::IllegalExpressionType(_) => "IllegalExpressionType",
+            EvaluationError::IllegalStatementType(_) => "IllegalStatementType",
             EvaluationError::IllegalOperationError(_) => "IllegalOperationError",
             EvaluationError::LoxTypeError(_,_) => "LoxTypeError",
             EvaluationError::UndefinedIdentifierError(_) => "UndefinedIdentifierError",
@@ -79,13 +87,13 @@ impl std::error::Error for EvaluationError {
 }
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            environment: Environment::new()
+            environment: Rc::new(RefCell::new(Environment::new()))
         }
     }
 
@@ -105,6 +113,7 @@ impl Interpreter {
             Stmt::PrintStmt(expr) => {println!("{}",self.evaluate_expr(expr)?);},
             Stmt::ExprStmt(expr) => {self.evaluate_expr(expr)?;},
             Stmt::VarDecl(_, _) => self.evaluate_var_stmt(stmt)?,
+            Stmt::Block(stmts) => self.evaluate_block_stmt(stmts)?,
             // _ => unreachable!("Unhandled statement")
         }
         Ok(())
@@ -134,7 +143,15 @@ impl Interpreter {
             value = self.evaluate_expr(initializer)?;
         }
 
-        self.environment.define(&name.lexeme, &value);
+        self.environment.borrow_mut().define(&name.lexeme, &value);
+        Ok(())
+    }
+
+    fn evaluate_block_stmt(&mut self, stmts: &[Stmt]) -> EvaluationResult<()> {
+        let env = Environment::from(
+            self.environment.clone()
+        );
+        self.execute_block(stmts, env)?;
         Ok(())
     }
 
@@ -187,12 +204,27 @@ impl Interpreter {
     }    
 
     fn evaluate_var_expr(&self, identifier: &Token) -> EvaluationResult<LoxType> {
-        Ok(self.environment.get(identifier)?.clone())
+        self.environment.borrow().get(identifier)
     }
 
     fn evaluate_assign_expr(&mut self, identifier: &Token, value: &Expr) -> EvaluationResult<LoxType> {
         let value = self.evaluate_expr(value)?;
-        Ok(self.environment.assign(identifier, value)?.clone())
+        self.environment.borrow_mut().assign(identifier, value)
+    }
+
+    fn execute_block(&mut self, stmts: &[Stmt], environment: Environment) -> EvaluationResult<()> {
+        let environment = Rc::new(RefCell::new(environment));
+        let previous = std::mem::replace(&mut self.environment, environment);
+
+        for stmt in stmts {
+            if let Err(e) = self.evaluate_stmt(stmt) {
+                self.environment = previous;
+                return Err(e);
+            }
+        }
+
+        self.environment = previous;
+        Ok(())
     }
 }
 

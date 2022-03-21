@@ -15,12 +15,10 @@ mod interpreter;
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let mut lox = Lox::new();
-    if args.len() > 2 {
-        println!("Usage: rustylox [script]");
-    } else if args.len() == 2 { 
-        lox.run_file(&args[1])?;
-    } else { 
-        lox.run_prompt()?;
+    match args.len() {
+        x if x > 2 => println!("Usage: rustylox [script]"),
+        x if x == 2 => lox.run_file(&args[1])?,
+        _ => lox.run_prompt()?,
     }
     Ok(())
 }

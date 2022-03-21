@@ -138,10 +138,7 @@ impl Scanner {
     }  
 
     fn matches(&mut self, expected: char) -> bool {
-        if self.is_at_end() {
-            false
-        }
-        else if self.char_ptr.offset(0) != expected {
+        if self.is_at_end() || (self.char_ptr.offset(0) != expected) {
             false
         }
         else {
