@@ -7,6 +7,8 @@ pub enum Expr {
     Grouping(Box<Expr>),
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
+    Var(Token),
+    Assign(Token, Box<Expr>)
 }
 
 impl std::fmt::Display for Expr {
@@ -18,8 +20,8 @@ impl std::fmt::Display for Expr {
             Expr::Grouping(ref expr) => write!(f, "(group {})", expr),
             Expr::Literal(ref literal) => write!(f, "{}", literal),
             Expr::Unary(ref operator, ref expr) => write!(f, "({} {})", operator.lexeme, expr),
-            // Expr::Var(ref token, _) => write!(f, "(var {})", token.lexeme),
-            // Expr::Assign(ref token, ref expr, _) => write!(f, "(assign {} {})", token.lexeme, expr),
+            Expr::Var(ref token) => write!(f, "(var {})", token.lexeme),
+            Expr::Assign(ref token, ref expr) => write!(f, "(assign {} {})", token.lexeme, expr),
             // Expr::Logical(ref left, ref operator, ref right) => {
             //     write!(f, "({} {} {})", operator.lexeme, left, right)
             // }
@@ -32,26 +34,4 @@ impl std::fmt::Display for Expr {
             // Expr::Super(_, ref method, _) => write!(f, "(super {})", method.lexeme),
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::interpreter::token::TokenType;
-
-    #[test]
-    fn print_test() {
-        let expr = Expr::Binary(
-            Box::from(Expr::Unary(
-                Token::new(TokenType::Minus, "-", None, 1),
-                Box::from(Expr::Literal(Literal::Num(123.0)))
-            )),
-            Token::new(TokenType::Star, "*", None, 1),
-            Box::from(Expr::Grouping(
-                Box::from(Expr::Literal(Literal::Num(45.67)))
-            ))
-        );
-
-        println!("{}",expr);
-    } 
 }

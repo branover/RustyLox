@@ -72,9 +72,9 @@ impl Lox {
         // Parsing 
         let tokens = result.unwrap();
         let mut parser = Parser::new(tokens);
-        let expr = parser.parse();
-        match expr {
-            Ok(expr) => self.interpreter.interpret(expr),
+        let stmts = parser.parse();
+        match stmts {
+            Ok(stmts) => self.interpreter.interpret(stmts),
             Err(e) => {
                 println!("{}", e);
                 self.had_runtime_error = true;

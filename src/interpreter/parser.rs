@@ -1,5 +1,6 @@
 use super::token::{Token,TokenType};
 use super::Expr;
+use super::Stmt;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -60,12 +61,89 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> ParseResult<Expr> {
-        self.expression()
+    pub fn parse(&mut self) -> ParseResult<Vec<Stmt>> {
+        let mut statements = Vec::new();
+        while !self.is_at_end() {
+            statements.push(self.declaration()?);
+        }
+        Ok(statements)
+    }
+
+    fn declaration(&mut self) -> ParseResult<Stmt> {
+        let peek = self.peek();
+        let result = match peek.token_type {
+            TokenType::Var => {
+                self.advance();
+                self.var_declaration()
+            },
+            _ => self.statement()
+        };
+
+        match result {
+            Ok(stmt) => Ok(stmt),
+            Err(e) => {
+                self.synchronize();
+                Err(e)
+            }
+        }
+    }
+
+    fn var_declaration(&mut self) -> ParseResult<Stmt> {
+        let name = self.consume(TokenType::Identifier, "Expect variable name.")?.clone();
+        let mut initializer = None;
+
+        if self.match_token(&[TokenType::Equal]) {
+            let expr = self.expression()?;
+            initializer = Some(expr);
+        }
+
+        self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
+        Ok(Stmt::VarDecl(name, initializer))
+    }
+
+    fn statement(&mut self) -> ParseResult<Stmt> {
+        let peek = self.peek();
+        match peek.token_type {
+            TokenType::Print => {
+                self.advance();
+                self.print_statement()
+            },
+            _ => self.expression_statement()
+        }
+    }
+
+    fn print_statement(&mut self) -> ParseResult<Stmt> {
+        let value = self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+        Ok(Stmt::PrintStmt(value))
+    }
+
+    fn expression_statement(&mut self) -> ParseResult<Stmt> {
+        let expr = self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression")?;
+        Ok(Stmt::ExprStmt(expr))
     }
 
     fn expression(&mut self) -> ParseResult<Expr> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> ParseResult<Expr> {
+        let expr = self.equality()?;
+
+        if self.match_token(&[TokenType::Equal]) {
+            let equals = self.previous().clone();
+            let value = self.assignment()?;
+
+            match expr {
+                Expr::Var(token) => {
+                    return Ok(Expr::Assign(token, Box::new(value)))
+                }
+                _ => return Err(ParsingError::InvalidAssignmentError(equals))
+            }
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> ParseResult<Expr> {
@@ -168,6 +246,10 @@ impl Parser {
                     "Undefined Literal".to_string()
                 ))
             }
+        }
+
+        if self.match_token(&[TokenType::Identifier]) {
+            return Ok(Expr::Var(self.previous().clone()));
         }
 
         if self.match_token(&[TokenType::LeftParen]) {

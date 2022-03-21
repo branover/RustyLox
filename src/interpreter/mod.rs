@@ -4,6 +4,8 @@ pub mod literal;
 pub mod expr;
 pub mod parser;
 pub mod lox_type;
+pub mod stmt;
+pub mod environment;
 
 pub use token::Token as Token;
 pub use scanner::Scanner as Scanner;
@@ -12,6 +14,8 @@ pub use expr::Expr as Expr;
 pub use parser::Parser as Parser;
 pub use lox_type::LoxType as LoxType;
 pub use lox_type::LoxTypeError as LoxTypeError;
+pub use stmt::Stmt as Stmt;
+pub use environment::Environment as Environment;
 
 use token::TokenType;
 
@@ -38,6 +42,7 @@ pub enum EvaluationError {
     IllegalExpressionType(Expr),
     IllegalOperationError(Token),
     LoxTypeError(Token,LoxTypeError),
+    UndefinedIdentifierError(Token),
     UnknownError,
 }
 
@@ -53,6 +58,9 @@ impl std::fmt::Display for EvaluationError {
             EvaluationError::LoxTypeError(ref token, ref e) => {
                 write!(f,"[line {}] LoxTypeError with {}: {}", token.line, token.lexeme, e)
             },
+            EvaluationError::UndefinedIdentifierError(ref token) => {
+                write!(f,"[line {}] UndefinedIdentifierError with {}", token.line, token.lexeme)
+            },
             EvaluationError::UnknownError => write!(f,"[line ?] UnknownError"),
         }
     }
@@ -64,35 +72,70 @@ impl std::error::Error for EvaluationError {
             EvaluationError::IllegalExpressionType(_) => "IllegalExpressionType",
             EvaluationError::IllegalOperationError(_) => "IllegalOperationError",
             EvaluationError::LoxTypeError(_,_) => "LoxTypeError",
+            EvaluationError::UndefinedIdentifierError(_) => "UndefinedIdentifierError",
             EvaluationError::UnknownError => "UnknownError",
         }
     }
 }
 
-pub struct Interpreter;
+pub struct Interpreter {
+    environment: Environment,
+}
 
 impl Interpreter {
     pub fn new() -> Interpreter {
-        Interpreter {}
+        Interpreter {
+            environment: Environment::new()
+        }
     }
 
-    pub fn interpret(&self, expr: Expr) {
-        // println!("{}", expr);
-        let result = self.evaluate_expr(&expr);
-        match result {
-            Ok(result) => println!("{}", result),
-            Err(e) => println!("{}", e)
-        };      
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) {
+        stmts.iter().for_each(|stmt| {
+            let result = self.evaluate_stmt(stmt);  
+            match result {
+                // Ok(result) => println!("{}", result),
+                Ok(_) => (),
+                Err(e) => println!("{}", e)
+            };           
+        });      
+    }
+
+    fn evaluate_stmt(&mut self, stmt: &Stmt) -> EvaluationResult<()> {
+        match stmt {
+            Stmt::PrintStmt(expr) => {println!("{}",self.evaluate_expr(expr)?);},
+            Stmt::ExprStmt(expr) => {self.evaluate_expr(expr)?;},
+            Stmt::VarDecl(_, _) => self.evaluate_var_stmt(stmt)?,
+            // _ => unreachable!("Unhandled statement")
+        }
+        Ok(())
     }
 
 
-    fn evaluate_expr(&self, expr: &Expr) -> EvaluationResult<LoxType> {
+    fn evaluate_expr(&mut self, expr: &Expr) -> EvaluationResult<LoxType> {
         match expr {
             Expr::Literal(literal) => self.evaluate_literal_expr(literal),
             Expr::Grouping(inner_expr) => self.evaluate_expr(inner_expr),
             Expr::Unary(token, right) => self.evaluate_unary_expr(token, right),
             Expr::Binary(left, token, right) => self.evaluate_binary_expr(left, token, right),
+            Expr::Var(identifier) => self.evaluate_var_expr(identifier),
+            Expr::Assign(identifier, value) => self.evaluate_assign_expr(identifier, value),
         }
+    }
+
+    fn evaluate_var_stmt(&mut self, stmt: &Stmt) -> EvaluationResult<()> {
+        let mut value = LoxType::Nil;
+
+        let (name, initializer) = match stmt {
+            Stmt::VarDecl(ref name, ref initializer) => (name, initializer),
+            _ => unreachable!("Unreachable") 
+        };
+
+        if let Some(initializer) = initializer {
+            value = self.evaluate_expr(initializer)?;
+        }
+
+        self.environment.define(&name.lexeme, &value);
+        Ok(())
     }
 
     fn evaluate_literal_expr(&self, literal: &Literal) -> EvaluationResult<LoxType> {
@@ -104,13 +147,13 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_unary_expr(&self, token: &Token, right: &Expr) -> EvaluationResult<LoxType> {
+    fn evaluate_unary_expr(&mut self, token: &Token, right: &Expr) -> EvaluationResult<LoxType> {
         let right = self.evaluate_expr(right)?;
 
         let result = match token.token_type {
             TokenType::Minus => -right,
             TokenType::Bang => Ok(LoxType::Bool(!right.is_truthy())),
-            _ => panic!("Unreachable")
+            _ => unreachable!("Unreachable")
         };
 
         match result {
@@ -119,7 +162,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_binary_expr(&self, left: &Expr, token: &Token, right: &Expr) -> EvaluationResult<LoxType> {
+    fn evaluate_binary_expr(&mut self, left: &Expr, token: &Token, right: &Expr) -> EvaluationResult<LoxType> {
         let left = self.evaluate_expr(left)?;
         let right = self.evaluate_expr(right)?;
 
@@ -134,7 +177,7 @@ impl Interpreter {
             TokenType::LessEqual |
             TokenType::BangEqual |
             TokenType::EqualEqual => left.determine_ordering(&right, token.token_type),
-            _ => panic!("Unreachable")
+            _ => unreachable!("Unreachable")
         };
 
         match result {
@@ -142,6 +185,15 @@ impl Interpreter {
             Err(e) => Err(EvaluationError::LoxTypeError(token.clone(), e))
         }       
     }    
+
+    fn evaluate_var_expr(&self, identifier: &Token) -> EvaluationResult<LoxType> {
+        Ok(self.environment.get(identifier)?.clone())
+    }
+
+    fn evaluate_assign_expr(&mut self, identifier: &Token, value: &Expr) -> EvaluationResult<LoxType> {
+        let value = self.evaluate_expr(value)?;
+        Ok(self.environment.assign(identifier, value)?.clone())
+    }
 }
 
 
