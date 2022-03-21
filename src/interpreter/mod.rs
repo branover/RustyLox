@@ -114,6 +114,9 @@ impl Interpreter {
             Stmt::ExprStmt(expr) => {self.evaluate_expr(expr)?;},
             Stmt::VarDecl(_, _) => self.evaluate_var_stmt(stmt)?,
             Stmt::Block(stmts) => self.evaluate_block_stmt(stmts)?,
+            Stmt::If(condition, then, else_stmt) => {
+                self.evaluate_if_stmt(condition, then, else_stmt)?
+            },
             // _ => unreachable!("Unhandled statement")
         }
         Ok(())
@@ -151,7 +154,15 @@ impl Interpreter {
         let env = Environment::from(
             self.environment.clone()
         );
-        self.execute_block(stmts, env)?;
+        self.execute_block(stmts, env)
+    }
+
+    fn evaluate_if_stmt(&mut self, condition: &Expr, then: &Stmt, else_stmt: &Option<Box<Stmt>>) -> EvaluationResult<()> {
+        if self.evaluate_expr(condition)?.is_truthy() {
+            self.evaluate_stmt(then)?;
+        } else if let Some(else_stmt) = else_stmt {
+            self.evaluate_stmt(else_stmt)?;
+        }
         Ok(())
     }
 

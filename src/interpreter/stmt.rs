@@ -6,6 +6,7 @@ pub enum Stmt {
     PrintStmt(Expr),
     VarDecl(Token,Option<Expr>),
     Block(Vec<Stmt>),
+    If(Expr,Box<Stmt>,Option<Box<Stmt>>)
 }
 
 impl std::fmt::Display for Stmt {
@@ -15,6 +16,9 @@ impl std::fmt::Display for Stmt {
             Stmt::PrintStmt(ref expr) => write!(f, "(print {})", expr),
             Stmt::VarDecl(ref var, _) => write!(f, "var {}", var),
             Stmt::Block(ref stmts) => write!(f, "<block of statements with len {}>", stmts.len()),
+            Stmt::If(ref expr, ref stmt, ref else_stmt) => {
+                write!(f, "if ({}) then ({}) else {:?}", expr, stmt, else_stmt)
+            },
         }
     }
 }

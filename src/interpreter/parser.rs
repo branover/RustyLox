@@ -104,6 +104,10 @@ impl Parser {
     fn statement(&mut self) -> ParseResult<Stmt> {
         let peek = self.peek();
         match peek.token_type {
+            TokenType::If => {
+                self.advance();
+                self.if_statement()
+            }
             TokenType::Print => {
                 self.advance();
                 self.print_statement()
@@ -114,6 +118,21 @@ impl Parser {
             }
             _ => self.expression_statement()
         }
+    }
+
+    fn if_statement(&mut self) -> ParseResult<Stmt> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after if condition.")?;
+
+        let then_branch = self.statement()?;
+        let mut else_branch = None;
+
+        if self.match_token(&[TokenType::Else]) {
+            else_branch = Some(Box::new(self.statement()?));
+        }
+
+        Ok(Stmt::If(condition, Box::new(then_branch), else_branch))
     }
 
     fn print_statement(&mut self) -> ParseResult<Stmt> {

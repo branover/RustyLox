@@ -208,7 +208,14 @@ impl Scanner {
             None => TokenType::Identifier,
         };
 
-        self.add_char_token(token_type);
+        let literal = match token_type {
+            TokenType::True => Some(Literal::Bool(true)),
+            TokenType::False => Some(Literal::Bool(false)),
+            TokenType::Nil => Some(Literal::Nil),
+            _ => None
+        };
+
+        self.add_token(token_type, literal);
     }
 
     fn is_digit(&self, c: char) -> bool {
