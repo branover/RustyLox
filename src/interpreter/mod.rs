@@ -117,6 +117,7 @@ impl Interpreter {
             Stmt::If(condition, then, else_stmt) => {
                 self.evaluate_if_stmt(condition, then, else_stmt)?
             },
+            Stmt::While(condition, body) => self.evaluate_while_stmt(condition, body)?,
             // _ => unreachable!("Unhandled statement")
         }
         Ok(())
@@ -131,6 +132,7 @@ impl Interpreter {
             Expr::Binary(left, token, right) => self.evaluate_binary_expr(left, token, right),
             Expr::Var(identifier) => self.evaluate_var_expr(identifier),
             Expr::Assign(identifier, value) => self.evaluate_assign_expr(identifier, value),
+            Expr::Logical(left, token, right) => self.evaluate_logical_expr(left, token, right),
         }
     }
 
@@ -162,6 +164,13 @@ impl Interpreter {
             self.evaluate_stmt(then)?;
         } else if let Some(else_stmt) = else_stmt {
             self.evaluate_stmt(else_stmt)?;
+        }
+        Ok(())
+    }
+
+    fn evaluate_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> EvaluationResult<()> {
+        while self.evaluate_expr(condition)?.is_truthy() {
+            self.evaluate_stmt(body)?;
         }
         Ok(())
     }
@@ -221,6 +230,18 @@ impl Interpreter {
     fn evaluate_assign_expr(&mut self, identifier: &Token, value: &Expr) -> EvaluationResult<LoxType> {
         let value = self.evaluate_expr(value)?;
         self.environment.borrow_mut().assign(identifier, value)
+    }
+
+    fn evaluate_logical_expr(&mut self, left: &Expr, token: &Token, right: &Expr) -> EvaluationResult<LoxType> {
+        let left = self.evaluate_expr(left)?;
+
+        match token.token_type {
+            TokenType::Or if left.is_truthy() => return Ok(left),
+            TokenType::And if !left.is_truthy() => return Ok(left),
+            _ => ()
+        };
+
+        self.evaluate_expr(right)
     }
 
     fn execute_block(&mut self, stmts: &[Stmt], environment: Environment) -> EvaluationResult<()> {

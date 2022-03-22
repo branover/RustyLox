@@ -6,7 +6,8 @@ pub enum Stmt {
     PrintStmt(Expr),
     VarDecl(Token,Option<Expr>),
     Block(Vec<Stmt>),
-    If(Expr,Box<Stmt>,Option<Box<Stmt>>)
+    If(Expr,Box<Stmt>,Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
 }
 
 impl std::fmt::Display for Stmt {
@@ -19,6 +20,7 @@ impl std::fmt::Display for Stmt {
             Stmt::If(ref expr, ref stmt, ref else_stmt) => {
                 write!(f, "if ({}) then ({}) else {:?}", expr, stmt, else_stmt)
             },
+            Stmt::While(ref expr, ref stmt) => write!(f, "while ({}): {}", expr, stmt),
         }
     }
 }
