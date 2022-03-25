@@ -2,6 +2,7 @@ use super::token::{Token,TokenType};
 use super::Literal;
 use super::Expr;
 use super::Stmt;
+use super::lox_types::FuncType;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -35,8 +36,8 @@ impl std::fmt::Display for ParsingError {
                 write!(f, "[line {}] Invalid assignment target", token.line)
             }
             ParsingError::InternalError(ref message) => write!(f, "Internal error: {}", message),
-            ParsingError::TooManyArgumentsError => f.write_str("Too many arguments, max number is 8"),
-            ParsingError::TooManyParametersError => f.write_str("Too many parameters, max number is 8")
+            ParsingError::TooManyArgumentsError => f.write_str("Too many arguments, max number is 255"),
+            ParsingError::TooManyParametersError => f.write_str("Too many parameters, max number is 255")
         }
     }
 }
@@ -77,6 +78,10 @@ impl Parser {
                 self.advance();
                 self.var_declaration()
             },
+            TokenType::Fun => {
+                self.advance();
+                self.function(FuncType::Function)
+            }
             _ => self.statement()
         };
 
@@ -102,6 +107,33 @@ impl Parser {
         Ok(Stmt::VarDecl(name, initializer))
     }
 
+    
+    fn function(&mut self, func_type: FuncType) -> ParseResult<Stmt> {
+        let name = self.consume(TokenType::Identifier, &format!("Expect {} name.", func_type))?.clone();
+        self.consume(TokenType::LeftParen, &format!("Expect '(' after {} name.", func_type))?;
+
+        let mut parameters = Vec::new();
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    return Err(ParsingError::TooManyArgumentsError)
+                }
+                let param = self.consume(TokenType::Identifier, "Expect parameter name.")?.clone();
+                parameters.push(param);
+                if !self.match_token(&[TokenType::Comma]) {
+                    break;
+                }
+            }        
+        }
+
+        self.consume(TokenType::RightParen, "Expect ')' after parameters.")?;
+
+        self.consume(TokenType::LeftBrace, &format!("Expect '{{' before {} body.", func_type))?;
+        let body = self.block_statement()?;
+        Ok(Stmt::Function(name.clone(), parameters, body))
+    }
+
+
     fn statement(&mut self) -> ParseResult<Stmt> {
         let peek = self.peek();
         match peek.token_type {
@@ -116,6 +148,10 @@ impl Parser {
             TokenType::Print => {
                 self.advance();
                 self.print_statement()
+            },
+            TokenType::Return => {
+                self.advance();
+                self.return_statement()
             },
             TokenType::While => {
                 self.advance();
@@ -198,6 +234,18 @@ impl Parser {
         Ok(Stmt::PrintStmt(value))
     }
 
+    fn return_statement(&mut self) -> ParseResult<Stmt> {
+        let keyword = self.previous().clone();
+        let mut value: Option<Expr> = None;
+
+        if !self.check(TokenType::Semicolon) {
+            value = Some(self.expression()?);
+        }
+
+        self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
+        Ok(Stmt::Return(keyword, value))
+    }
+
     fn while_statement(&mut self) -> ParseResult<Stmt> {
         self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
         let condition = self.expression()?;
@@ -235,8 +283,8 @@ impl Parser {
             let equals = self.previous().clone();
             let value = self.assignment()?;
 
-            if let Expr::Var(token) = expr {
-                return Ok(Expr::Assign(token, Box::new(value)))
+            if let Expr::Var(token,_) = expr {
+                return Ok(Expr::Assign(token, Box::new(value), None))
             } else {
                 return Err(ParsingError::InvalidAssignmentError(equals))
             }
@@ -350,9 +398,47 @@ impl Parser {
             let right = self.unary()?;
             Expr::Unary(operator, Box::new(right))          
         } else {
-            self.primary()?
+            self.call()?
         };
         Ok(expr)
+    }
+
+    fn call(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.match_token(&[TokenType::LeftParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> ParseResult<Expr> {
+        let mut arguments = Vec::new();
+
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if arguments.len() >= 255 {
+                    return Err(ParsingError::TooManyArgumentsError)
+                }
+                arguments.push(self.expression()?);
+                if !self.match_token(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+
+        let paren = self.consume(
+            TokenType::RightParen,
+            "Expect ')' afte rarguments."
+        )?;
+
+        Ok(Expr::Call(Box::new(callee), paren.clone(), arguments))
     }
 
     fn primary(&mut self) -> ParseResult<Expr> {
@@ -372,7 +458,7 @@ impl Parser {
         }
 
         if self.match_token(&[TokenType::Identifier]) {
-            return Ok(Expr::Var(self.previous().clone()));
+            return Ok(Expr::Var(self.previous().clone(), None));
         }
 
         if self.match_token(&[TokenType::LeftParen]) {

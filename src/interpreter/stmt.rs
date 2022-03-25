@@ -1,6 +1,6 @@
 use super::{Token,Expr};
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum Stmt {
     ExprStmt(Expr),
     PrintStmt(Expr),
@@ -8,6 +8,8 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     If(Expr,Box<Stmt>,Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
+    Function(Token, Vec<Token>, Vec<Stmt>),
+    Return(Token, Option<Expr>),
 }
 
 impl std::fmt::Display for Stmt {
@@ -21,6 +23,8 @@ impl std::fmt::Display for Stmt {
                 write!(f, "if ({}) then ({}) else {:?}", expr, stmt, else_stmt)
             },
             Stmt::While(ref expr, ref stmt) => write!(f, "while ({}): {}", expr, stmt),
+            Stmt::Function(ref name, _,_) => write!(f, "<function {}>", name),
+            Stmt::Return(_, ref expr) => write!(f, "return {:?}", expr),
         }
     }
 }

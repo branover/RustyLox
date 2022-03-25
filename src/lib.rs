@@ -80,7 +80,14 @@ impl Lox {
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse();
         match stmts {
-            Ok(stmts) => self.interpreter.interpret(stmts),
+            Ok(mut stmts) => {
+                let mut resolver = Resolver::new();
+                if let Err(e) = resolver.resolve_ast(&mut stmts) {
+                    println!("{}", e);
+                    self.had_error = true;
+                };
+                self.interpreter.interpret(stmts)
+            },
             Err(e) => {
                 println!("{}", e);
                 self.had_runtime_error = true;

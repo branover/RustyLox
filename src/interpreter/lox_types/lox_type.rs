@@ -1,6 +1,9 @@
-use super::token::TokenType;
+use super::super::{
+    token::TokenType,
+    lox_types::Callable,
+};
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, rc::Rc};
 
 #[derive(Debug)]
 pub enum LoxTypeError {
@@ -35,7 +38,8 @@ pub enum LoxType {
     Nil,
     Bool(bool),
     Num(f64),
-    String(String)
+    String(String),
+    Func(Rc<dyn Callable>)
 }
 
 impl std::fmt::Display for LoxType {
@@ -45,6 +49,15 @@ impl std::fmt::Display for LoxType {
             LoxType::Bool(b) => write!(f, "{}", b),
             LoxType::Num(n) => write!(f, "{}", n),
             LoxType::String(s) => write!(f, "{}", s),
+            // LoxType::Func(arguments) => {
+            //     write!(f, "(")?;
+            //     arguments.iter().fold(Ok(()), |result, arg| {
+            //         result.and_then(|_| write!(f, ",{}", arg)?)
+            //     });
+            //     write!(f, ")")?;
+            //     Ok(())
+            // }
+            LoxType::Func(callable) => write!(f, "{}", self.get_callable().unwrap()),
         }
     }
 }
@@ -166,6 +179,13 @@ impl LoxType {
             Ok(LoxType::Bool(result))
         } else {
             Err(LoxTypeError::IllegalComparisonError(self.clone(), right.clone()))
+        }
+    }
+
+    pub fn get_callable(&self) -> Option<Rc<dyn Callable>> {
+        match *self {
+            LoxType::Func(ref func) => Some(func.clone()),
+            _ => None,
         }
     }
 }

@@ -7,9 +7,10 @@ pub enum Expr {
     Grouping(Box<Expr>),
     Unary(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
-    Var(Token),
-    Assign(Token, Box<Expr>),
+    Var(Token, Option<usize>),
+    Assign(Token, Box<Expr>, Option<usize>),
     Logical(Box<Expr>, Token, Box<Expr>),
+    Call(Box<Expr>, Token, Vec<Expr>),
 }
 
 impl std::fmt::Display for Expr {
@@ -21,14 +22,14 @@ impl std::fmt::Display for Expr {
             Expr::Grouping(ref expr) => write!(f, "(group {})", expr),
             Expr::Literal(ref literal) => write!(f, "{}", literal),
             Expr::Unary(ref operator, ref expr) => write!(f, "({} {})", operator.lexeme, expr),
-            Expr::Var(ref token) => write!(f, "(var {})", token.lexeme),
-            Expr::Assign(ref token, ref expr) => write!(f, "(assign {} {})", token.lexeme, expr),
+            Expr::Var(ref token,_) => write!(f, "(var {})", token.lexeme),
+            Expr::Assign(ref token, ref expr,_) => write!(f, "(assign {} {})", token.lexeme, expr),
             Expr::Logical(ref left, ref operator, ref right) => {
                 write!(f, "({} {} {})", operator.lexeme, left, right)
             }
-            // Expr::Call(ref callee, ref arguments, _) => {
-            //     write!(f, "(call {} {:?})", callee, arguments)
-            // }
+            Expr::Call(ref callee, _, ref arguments) => {
+                write!(f, "(call {} {:?})", callee, arguments)
+            }
             // Expr::Get(ref expr, ref token) => write!(f, "(get {} {})", token.lexeme, expr),
             // Expr::Set(ref expr, ref token, _) => write!(f, "(set {} {})", token.lexeme, expr),
             // Expr::This(_, _) => write!(f, "this"),
