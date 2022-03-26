@@ -18,7 +18,7 @@ pub use lox_types::LoxType;
 pub use lox_types::LoxTypeError;
 pub use stmt::Stmt;
 pub use environment::Environment;
-pub use lox_types::{Callable, LoxFunc};
+pub use lox_types::{Callable, LoxFunc, LoxClass, LoxClassInternal, LoxInstance};
 pub use resolver::Resolver;
 
 use std::cell::RefCell;
@@ -145,6 +145,7 @@ impl Interpreter {
             Stmt::Function(name, arguments, body) => 
                 self.evaluate_function_stmt(name, arguments, body),
             Stmt::Return(token, value) => self.evaluate_return_stmt(token, value),
+            Stmt::ClassDecl(name, methods) => self.evaluate_class_stmt(name, methods),
         }
     }
 
@@ -239,6 +240,13 @@ impl Interpreter {
         Ok(expr_result)
     }
 
+    fn evaluate_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> StatementResult {
+        self.environment.borrow_mut().define(&name.lexeme, &LoxType::Nil);
+        let class = LoxClass::new(&name.lexeme);
+        self.environment.borrow_mut().assign(&name, LoxType::Class(Rc::new(class)))?;
+        Ok(None)
+    }
+
     fn evaluate_expr(&mut self, expr: &Expr) -> EvaluationResult<LoxType> {
         match expr {
             Expr::Literal(literal) => self.evaluate_literal_expr(literal),
@@ -249,6 +257,8 @@ impl Interpreter {
             Expr::Assign(identifier, value, distance) => self.evaluate_assign_expr(identifier, value, *distance),
             Expr::Logical(left, token, right) => self.evaluate_logical_expr(left, token, right),
             Expr::Call(callee, paren, arguments) => self.evaluate_call_expr(callee, paren, arguments),
+            Expr::Get(object, name) => self.evaluate_get_expr(object, name),
+            Expr::Set(object, name, value) => self.evaluate_set_expr(object, name, value),
         }
     }
 
@@ -348,6 +358,26 @@ impl Interpreter {
         }
 
         callee.call(self, &evaluated_arguments)
+    }
+
+    fn evaluate_get_expr(&mut self, object: &Expr, name: &Token) -> EvaluationResult<LoxType> {
+        let object = self.evaluate_expr(object)?;
+        if let LoxType::Instance(object) = object {
+            Ok(object.borrow().get(name)?)
+        } else {
+            Err(EvaluationError::LoxTypeError(name.clone(), LoxTypeError::IllegalOperationError))
+        }
+    }
+
+    fn evaluate_set_expr(&mut self, object: &Expr, name: &Token, value: &Expr) -> EvaluationResult<LoxType> {
+        let object = self.evaluate_expr(object)?;
+        if let LoxType::Instance(object) = object {
+            let value = self.evaluate_expr(value)?;
+            object.borrow_mut().set(name, &value);
+            Ok(value)
+        } else {
+            Err(EvaluationError::LoxTypeError(name.clone(), LoxTypeError::IllegalOperationError))
+        }
     }
 
 }

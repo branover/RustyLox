@@ -78,6 +78,10 @@ impl Parser {
                 self.advance();
                 self.var_declaration()
             },
+            TokenType::Class => {
+                self.advance();
+                self.class_declaration()
+            }
             TokenType::Fun => {
                 self.advance();
                 self.function(FuncType::Function)
@@ -105,6 +109,19 @@ impl Parser {
 
         self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
         Ok(Stmt::VarDecl(name, initializer))
+    }
+
+    fn class_declaration(&mut self) -> ParseResult<Stmt> {
+        let name = self.consume(TokenType::Identifier, "Expect class name.")?.clone();
+        self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
+
+        let mut methods = Vec::new();
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
+            methods.push(self.function(FuncType::Method)?);
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
+        Ok(Stmt::ClassDecl(name, methods))
     }
 
     
@@ -285,6 +302,8 @@ impl Parser {
 
             if let Expr::Var(token,_) = expr {
                 return Ok(Expr::Assign(token, Box::new(value), None))
+            } else if let Expr::Get(object, name) = expr {
+                return Ok(Expr::Set(object, name, Box::new(value)))
             } else {
                 return Err(ParsingError::InvalidAssignmentError(equals))
             }
@@ -409,6 +428,9 @@ impl Parser {
         loop {
             if self.match_token(&[TokenType::LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_token(&[TokenType::Dot]) {
+                let name = self.consume(TokenType::Identifier, "Expect property name after '.'.")?;
+                expr = Expr::Get(Box::new(expr), name.clone());
             } else {
                 break;
             }

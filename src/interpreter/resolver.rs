@@ -121,6 +121,10 @@ impl Resolver {
                     self.resolve_expr(expr)?;
                 }
             },
+            Stmt::ClassDecl(name, methods) => {
+                self.declare(&name)?;
+                self.define(&name);
+            }
         };
         Ok(())
     }
@@ -160,6 +164,13 @@ impl Resolver {
                 for argument in arguments {
                     self.resolve_expr(argument)?;
                 }
+            },
+            Expr::Get(object, name) => {
+                self.resolve_expr(object)?;
+            },
+            Expr::Set(object, name, value) => {
+                self.resolve_expr(value)?;
+                self.resolve_expr(object)?;
             },
         };
         Ok(())

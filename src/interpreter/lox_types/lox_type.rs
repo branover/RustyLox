@@ -1,9 +1,9 @@
 use super::super::{
     token::TokenType,
-    lox_types::Callable,
+    lox_types::{Callable,LoxClass,LoxInstance},
 };
 
-use std::{cmp::Ordering, rc::Rc};
+use std::{cmp::Ordering, rc::Rc, cell::RefCell};
 
 #[derive(Debug)]
 pub enum LoxTypeError {
@@ -39,7 +39,9 @@ pub enum LoxType {
     Bool(bool),
     Num(f64),
     String(String),
-    Func(Rc<dyn Callable>)
+    Func(Rc<dyn Callable>),
+    Class(Rc<LoxClass>),
+    Instance(Rc<RefCell<LoxInstance>>)
 }
 
 impl std::fmt::Display for LoxType {
@@ -58,6 +60,8 @@ impl std::fmt::Display for LoxType {
             //     Ok(())
             // }
             LoxType::Func(callable) => write!(f, "{}", self.get_callable().unwrap()),
+            LoxType::Class(class) => write!(f, "<class {}>", class),
+            LoxType::Instance(instance) => write!(f, "<instance {}>", instance.borrow())
         }
     }
 }
@@ -185,6 +189,7 @@ impl LoxType {
     pub fn get_callable(&self) -> Option<Rc<dyn Callable>> {
         match *self {
             LoxType::Func(ref func) => Some(func.clone()),
+            LoxType::Class(ref class) => Some(class.clone()),
             _ => None,
         }
     }
