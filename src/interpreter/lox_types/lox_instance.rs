@@ -3,16 +3,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::super::{
-    Interpreter,
     LoxType,
     EvaluationError,
-    Stmt,
-    Environment,
     Token,
 };
-use super::{Callable,LoxClassInternal};
+use super::{LoxClassInternal};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoxInstance {
     class: Rc<LoxClassInternal>,
     fields: HashMap<String, LoxType>,
@@ -27,10 +24,16 @@ impl LoxInstance {
     }
 
     pub fn get(&self, name: &Token) -> Result<LoxType, EvaluationError> {
-        match self.fields.get(&name.lexeme) {
-            Some(val) => Ok(val.clone()),
-            None => Err(EvaluationError::UndefinedIdentifierError(name.clone()))
+        if let Some(val) = self.fields.get(&name.lexeme).cloned() {
+            return Ok(val);
         }
+
+        if let Some(method) = self.class.find_method(&name.lexeme) {
+            let method = method.bind(Rc::new(RefCell::new(self.clone())));
+            return Ok(LoxType::Func(Rc::new(method)));
+        }
+        
+        Err(EvaluationError::UndefinedIdentifierError(name.clone()))
     }
 
     pub fn set(&mut self, name: &Token, value: &LoxType) {

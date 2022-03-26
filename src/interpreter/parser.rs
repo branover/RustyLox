@@ -113,6 +113,13 @@ impl Parser {
 
     fn class_declaration(&mut self) -> ParseResult<Stmt> {
         let name = self.consume(TokenType::Identifier, "Expect class name.")?.clone();
+        
+        let mut superclass = None;
+        if self.match_token(&[TokenType::Less]) {
+            self.consume(TokenType::Identifier, "Expect superclass name.")?;
+            superclass = Some(Expr::Var(self.previous().clone(), None));
+        }
+
         self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
 
         let mut methods = Vec::new();
@@ -121,7 +128,7 @@ impl Parser {
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
-        Ok(Stmt::ClassDecl(name, methods))
+        Ok(Stmt::ClassDecl(name, methods, superclass))
     }
 
     
@@ -477,6 +484,20 @@ impl Parser {
                     "Undefined Literal".to_string()
                 ))
             }
+        }
+
+        if self.match_token(&[TokenType::Super]) {
+            let keyword = self.previous().clone();
+            self.consume(TokenType::Dot, "Expect '.' after 'super'.")?;
+            let method = self.consume(
+                TokenType::Identifier,
+                "Expect superclass method name."
+            )?.clone();
+            return Ok(Expr::Super(keyword, method, None));
+        }
+
+        if self.match_token(&[TokenType::This]) {
+            return Ok(Expr::This(self.previous().clone(), None));
         }
 
         if self.match_token(&[TokenType::Identifier]) {

@@ -22,6 +22,7 @@ pub use lox_types::{Callable, LoxFunc, LoxClass, LoxClassInternal, LoxInstance};
 pub use resolver::Resolver;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use token::TokenType;
@@ -120,7 +121,6 @@ impl Interpreter {
         stmts.iter().for_each(|stmt| {
             let result = self.evaluate_stmt(stmt);  
             match result {
-                // Ok(Some(result)) => println!("{}", result),
                 Ok(_) => (),
                 Err(e) => println!("{}", e)
             };           
@@ -145,7 +145,7 @@ impl Interpreter {
             Stmt::Function(name, arguments, body) => 
                 self.evaluate_function_stmt(name, arguments, body),
             Stmt::Return(token, value) => self.evaluate_return_stmt(token, value),
-            Stmt::ClassDecl(name, methods) => self.evaluate_class_stmt(name, methods),
+            Stmt::ClassDecl(name, methods, superclass) => self.evaluate_class_stmt(name, methods, superclass),
         }
     }
 
@@ -178,7 +178,6 @@ impl Interpreter {
 
         for stmt in stmts {
             let result = self.evaluate_stmt(stmt);
-            // println!("Statement: {:?}, Result: {:?}", stmt, result);
             match result {
                 Err(e) => {
                     self.environment = previous;
@@ -186,13 +185,11 @@ impl Interpreter {
                 },
                 Ok(Some(ret)) => {
                     self.environment = previous;
-                    // println!("Returning: {}", ret);
                     return Ok(Some(ret))
                 },
                 _ => ()
             }
         }
-        // println!("No return");
         self.environment = previous;
         Ok(None)
     }
@@ -210,9 +207,7 @@ impl Interpreter {
 
     fn evaluate_while_stmt(&mut self, condition: &Expr, body: &Stmt) -> StatementResult {
         while self.evaluate_expr(condition)?.is_truthy() {
-            // println!("{:?}", body);
             if let Some(ret) = self.evaluate_stmt(body)? {
-                // println!("RET: {}", ret);
                 return Ok(Some(ret));
             }
         }
@@ -224,7 +219,8 @@ impl Interpreter {
             name.clone(),
             arguments.clone(),
             body.clone(),
-            self.environment.clone()
+            self.environment.clone(),
+            false
         );
         self.environment.borrow_mut().define(&name.lexeme, &LoxType::Func(Rc::new(function)));
         Ok(None)
@@ -240,10 +236,52 @@ impl Interpreter {
         Ok(expr_result)
     }
 
-    fn evaluate_class_stmt(&mut self, name: &Token, methods: &[Stmt]) -> StatementResult {
+    fn evaluate_class_stmt(&mut self, name: &Token, methods: &[Stmt], superclass: &Option<Expr>) -> StatementResult {
+        let mut evaluated_superclass = None;
+        if let Some(superclass) = superclass {
+            let superclass = match self.evaluate_expr(superclass)? {
+                LoxType::Class(sup) => sup.clone(),
+                _ => return Err(EvaluationError::LoxTypeError(name.clone(), LoxTypeError::IllegalOperationError))
+            };
+            evaluated_superclass = Some(superclass);
+        }
+
+
         self.environment.borrow_mut().define(&name.lexeme, &LoxType::Nil);
-        let class = LoxClass::new(&name.lexeme);
+
+        if let Some(superclass) = superclass {
+            let child = Environment::from(self.environment.clone());
+            self.environment = Rc::new(RefCell::new(child));
+
+            let superclass_loxtype = LoxType::Class(evaluated_superclass.as_ref().unwrap().clone());
+            
+            self.environment.borrow_mut().define("super", &superclass_loxtype);
+        }
+
+        let mut class_methods: HashMap<String,LoxFunc> = HashMap::new();
+        for method in methods {
+            if let Stmt::Function(ref name, ref parameters, ref body) = *method {
+                let func = LoxFunc::new(
+                    name.clone(),
+                    parameters.clone(),
+                    body.clone(),
+                    self.environment.clone(),
+                    name.lexeme == "init"
+                );
+                class_methods.insert(name.lexeme.clone(), func);
+            }
+        }
+        
+
+        let class = LoxClass::new(&name.lexeme, class_methods, evaluated_superclass);
+
+        if let Some(superclass) = superclass {
+            let enclosing = self.environment.borrow().enclosing.as_ref().unwrap().clone();
+            self.environment = enclosing;
+        }
+
         self.environment.borrow_mut().assign(&name, LoxType::Class(Rc::new(class)))?;
+
         Ok(None)
     }
 
@@ -259,6 +297,8 @@ impl Interpreter {
             Expr::Call(callee, paren, arguments) => self.evaluate_call_expr(callee, paren, arguments),
             Expr::Get(object, name) => self.evaluate_get_expr(object, name),
             Expr::Set(object, name, value) => self.evaluate_set_expr(object, name, value),
+            Expr::This(identifier, distance) => self.evaluate_this_expr(identifier, distance),
+            Expr::Super(identifier, method, distance) => self.evaluate_super_expr(identifier, method, *distance),
         }
     }
 
@@ -380,6 +420,45 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_this_expr(&mut self, identifier: &Token, distance: &Option<usize>) -> EvaluationResult<LoxType> {
+        if let Some(distance) = distance {
+            self.environment.borrow().get_at(identifier, *distance)
+        } else {
+            println!("{:?}", self.environment.borrow_mut().get(identifier));
+            self.globals.borrow().get(identifier)
+        }  
+    }
+
+    fn evaluate_super_expr(&mut self, identifier: &Token, method: &Token, distance: Option<usize>) -> EvaluationResult<LoxType> {
+        let super_token = Token::new(TokenType::Super, "super", None, identifier.line);
+        let superclass = if let Some(distance) = distance {
+            self.environment.borrow().get_at(&super_token, distance)
+        } else {
+            self.environment.borrow().get(&super_token)
+        }?;
+
+        let this_token = Token::new(TokenType::Super, "this", None, identifier.line);
+        let object = if let Some(distance) = distance {
+            self.environment.borrow().get_at(&this_token, distance - 1)
+        } else {
+            self.environment.borrow().get(&this_token)
+        }?;
+
+        if let LoxType::Class(superclass) = superclass {
+            let resolved_method = superclass.find_method(&method.lexeme);
+            match (resolved_method, object) {
+                (Some(resolved_method),LoxType::Instance(ref instance)) => {
+                    return Ok(LoxType::Func(Rc::new(resolved_method.bind(instance.clone()))))
+                },
+                (None,_) => {
+                    return Err(EvaluationError::UndefinedIdentifierError(method.clone()))
+                }
+                _ => (),
+            };
+        }
+
+        Err(EvaluationError::IllegalOperationError(identifier.clone()))
+    }
 }
 
 

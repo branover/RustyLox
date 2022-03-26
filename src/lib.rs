@@ -66,9 +66,9 @@ impl Lox {
         let mut scanner = Scanner::new(source);
         let result = scanner.scan_tokens();
         if let Ok(ref tokens) = result {
-            tokens.iter().for_each(|token| {
+            // tokens.iter().for_each(|token| {
                 // println!("{}", token);
-            });
+            // });
         } 
         else if let Err(ref e) = result {
             self.had_error = true;
@@ -86,7 +86,9 @@ impl Lox {
                     println!("{}", e);
                     self.had_error = true;
                 };
-                self.interpreter.interpret(stmts)
+                if !self.had_error {
+                    self.interpreter.interpret(stmts)
+                }
             },
             Err(e) => {
                 println!("{}", e);

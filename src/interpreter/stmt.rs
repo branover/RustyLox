@@ -10,7 +10,7 @@ pub enum Stmt {
     While(Expr, Box<Stmt>),
     Function(Token, Vec<Token>, Vec<Stmt>),
     Return(Token, Option<Expr>),
-    ClassDecl(Token, Vec<Stmt>)
+    ClassDecl(Token, Vec<Stmt>, Option<Expr>)
 }
 
 impl std::fmt::Display for Stmt {
@@ -26,7 +26,7 @@ impl std::fmt::Display for Stmt {
             Stmt::While(ref expr, ref stmt) => write!(f, "while ({}): {}", expr, stmt),
             Stmt::Function(ref name, _,_) => write!(f, "<function {}>", name),
             Stmt::Return(_, ref expr) => write!(f, "return {:?}", expr),
-            Stmt::ClassDecl(ref name,_) => write!(f, "<class {}>", name),
+            Stmt::ClassDecl(ref name,_, _) => write!(f, "<class {}>", name),
         }
     }
 }

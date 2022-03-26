@@ -9,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Environment {
     values: HashMap<String,LoxType>,
-    enclosing: Option<Rc<RefCell<Environment>>>,
+    pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Default for Environment {
@@ -118,6 +118,6 @@ impl Environment {
             parent = env;
         }
 
-        None
+        Some(parent)
     }
 }

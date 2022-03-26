@@ -12,7 +12,9 @@ type ResolveResult<T> = Result<T, ResolvingError>;
 pub enum ResolvingError {
     ReferencedInInitializer(Token, String),
     AlreadyExists(Token, String),
-    ReturnOutOfFunc(Token, String)
+    ReturnOutOfFunc(Token, String),
+    ThisOutOfClass(Token, String),
+    ReturnInInit(Token, String),
 }
 
 impl std::fmt::Display for ResolvingError {
@@ -35,7 +37,19 @@ impl std::fmt::Display for ResolvingError {
                 token.line,
                 message,
                 token.lexeme)
+            },
+            ResolvingError::ThisOutOfClass(ref token, ref message) => {
+                write!(f, "[line {}] ThisOutOfClass: {}: {}",
+                token.line,
+                message,
+                token.lexeme)
             }
+            ResolvingError::ReturnInInit(ref token, ref message) => {
+                write!(f, "[line {}] ThisOutOfClass: {}: {}",
+                token.line,
+                message,
+                token.lexeme)
+            },
         }
     }
 }
@@ -46,6 +60,8 @@ impl std::error::Error for ResolvingError {
             ResolvingError::ReferencedInInitializer(_, _) => "ReferencedInInitializer",
             ResolvingError::AlreadyExists(_, _) => "AlreadyExists",
             ResolvingError::ReturnOutOfFunc(_, _) => "ReturnOutOfFunc",
+            ResolvingError::ThisOutOfClass(_, _) => "ThisOutOfClass",
+            ResolvingError::ReturnInInit(_, _) => "ReturnInInit",
         }
     }
 }
@@ -54,18 +70,29 @@ impl std::error::Error for ResolvingError {
 enum FuncType {
     None,
     Function,
+    Method,
+    Initializer,
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+enum ClassType {
+    None,
+    Class,
+    Subclass
 }
 
 pub struct Resolver{
     scopes: Vec<HashMap<String, bool>>,
     current_function: FuncType,
+    current_class: ClassType,
 }
 
 impl Resolver {
     pub fn new() -> Resolver { 
         Resolver { 
             scopes: Vec::new(),
-            current_function: FuncType::None
+            current_function: FuncType::None,
+            current_class: ClassType::None
         }
     }
 
@@ -116,14 +143,55 @@ impl Resolver {
             Stmt::Return(token, expr) => {
                 if self.current_function == FuncType::None {
                     return Err(ResolvingError::ReturnOutOfFunc(token.clone(), "Can't return from top-level code.".to_string()))
-                }
+                } 
                 if let Some(expr) = expr {
+                    if self.current_function == FuncType::Initializer {
+                        return Err(ResolvingError::ReturnInInit(token.clone(), "Can't return a value from an initializer".to_string()))
+                    }
                     self.resolve_expr(expr)?;
                 }
             },
-            Stmt::ClassDecl(name, methods) => {
+            Stmt::ClassDecl(name, methods, superclass) => {
+                let enclosing_class = self.current_class;
+                self.current_class = ClassType::Class;
+
                 self.declare(&name)?;
                 self.define(&name);
+
+                if let Some(superclass) = superclass {
+                    if let Expr::Var(super_name,_) = superclass {
+                        if super_name.lexeme == name.lexeme {
+                            return Err(ResolvingError::AlreadyExists(super_name.clone(), "A class can't inherit from itself".to_string()))
+                        }
+                    }
+                    self.current_class = ClassType::Subclass;
+                    self.resolve_expr(superclass)?;
+
+                    self.begin_scope();
+                    self.scopes.last_mut().unwrap().insert("super".to_string(), true);
+                }
+
+                self.begin_scope();
+                self.scopes.last_mut().unwrap().insert("this".to_string(), true);
+
+                for method in methods {
+                    if let Stmt::Function(name, parameters, body) = method {
+                        let mut func_type = FuncType::Method;
+                        if name.lexeme == "init" {
+                            func_type = FuncType::Initializer;
+                        }
+                        self.resolve_function(name, parameters, body, func_type)?;
+                    }
+                    
+                }
+
+                self.end_scope();
+
+                if let Some(superclass) = superclass {
+                    self.end_scope();
+                }
+
+                self.current_class = enclosing_class;
             }
         };
         Ok(())
@@ -171,6 +239,26 @@ impl Resolver {
             Expr::Set(object, name, value) => {
                 self.resolve_expr(value)?;
                 self.resolve_expr(object)?;
+            },
+            Expr::This(name, distance) => {
+                if self.current_class == ClassType::None {
+                    return Err(ResolvingError::ThisOutOfClass(
+                        name.clone(),
+                        "Can't use 'this' outside of a class".to_string()))
+                }
+                *distance = self.resolve_local(name);
+            },
+            Expr::Super(name, _, distance) => {
+                if self.current_class == ClassType::None {
+                    return Err(ResolvingError::ThisOutOfClass(
+                        name.clone(),
+                        "Can't use 'super' outside of a class".to_string()))
+                } else if self.current_class != ClassType::Subclass {
+                    return Err(ResolvingError::ThisOutOfClass(
+                        name.clone(),
+                        "Can't use 'super' in a class with no subclass".to_string()))
+                }
+                *distance = self.resolve_local(name);
             },
         };
         Ok(())
